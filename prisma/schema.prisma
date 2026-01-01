@@ -15,20 +15,233 @@ datasource db {
   provider = "postgresql"
 }
 
-
-
-model User {
-  id    Int     @default(autoincrement()) @id
-  email String  @unique
-  name  String?
-  posts Post[]
+enum MembershipRole {
+  OWNER
+  ADMIN
+  STAFF
+  CUSTOMER
 }
 
-model Post {
-  id        Int      @default(autoincrement()) @id
-  title     String
-  content   String?
-  published Boolean? @default(false)
-  author    User?    @relation(fields: [authorId], references: [id])
-  authorId  Int?
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ServiceStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  REGISTER
+  BOOKING_CREATE
+  BOOKING_UPDATE
+  BOOKING_CANCEL
+}
+
+model Organization {
+    id        String   @id @default(cuid())
+    name      String   
+    slug      String   @unique
+    timezone  String   @default("Europe/Istanbul")
+    isActive  Boolean  @default(true)
+    members   Membership[]
+    services  Service[]
+    bookings  Booking[]
+    audits    AuditLog[]
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+    @@index([slug])
+}
+
+model User {
+    id           String     @id @default(cuid())
+    email        String     @unique
+    username     String?    @unique
+    passwordHash String
+    fullName     String?
+    status       UserStatus @default(ACTIVE)
+    memberships  Membership[]
+    customerBookings Booking[] @relation("BookingCustomer")
+    audits       AuditLog[]
+    refreshTokens RefreshToken[]
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Membership{
+      id           String     @id @default(cuid())
+      role           MembershipRole @default(CUSTOMER)
+      userId         String
+      organizationId String
+      user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+      organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+      staffBookings  Booking[]     @relation("BookingStaffMember")
+      serviceLinks   ServiceStaff[]
+      weeklyRules    WeeklyAvailabilityRule[] @relation("WeeklyRuleStaff")
+      overrides      AvailabilityOverride[]   @relation("OverrideStaff")
+      createdAt DateTime @default(now())
+      updatedAt DateTime @updatedAt
+
+      @@unique([userId, organizationId])
+      @@index([organizationId, role])
+      @@index([userId])
+}
+
+model RefreshToken {
+
+      id        String   @id @default(cuid())
+      tokenHash String   @unique
+      userId    String
+      user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+      revokedAt DateTime?
+      expiresAt DateTime
+      createdAt DateTime @default(now())
+      @@index([userId])
+      @@index([expiresAt])
+}
+
+model Service {
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  status         ServiceStatus @default(ACTIVE)
+  durationMin    Int
+  priceCents     Int?
+  currency       String?       @default("TRY")
+  staffLinks     ServiceStaff[]
+  weeklyRules    WeeklyAvailabilityRule[]
+  overrides      AvailabilityOverride[]
+  bookings       Booking[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, name])
+
+}
+
+model ServiceStaff {
+  id        String   @id @default(cuid())
+  serviceId String
+  service   Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Membership @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  @@unique([serviceId, memberId])
+  @@index([memberId])
+
+}
+
+model WeeklyAvailabilityRule {
+  id          String   @id @default(cuid())
+  serviceId String
+  service   Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  weekday     Int
+  startMin    Int
+  endMin      Int
+  slotSizeMin Int      @default(15)
+  staffMemberId String?
+  staffMember   Membership? @relation("WeeklyRuleStaff", fields: [staffMemberId], references: [id], onDelete: SetNull)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([serviceId, weekday])
+  @@index([staffMemberId])
+
+
+}
+
+model AvailabilityOverride {
+
+ id          String   @id @default(cuid())
+  serviceId String
+  service   Service    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  date      DateTime
+  isClosed  Boolean  @default(false)
+  startMin    Int
+  endMin      Int
+  slotSizeMin Int      @default(15)
+  staffMemberId String?
+  staffMember   Membership? @relation("OverrideStaff", fields: [staffMemberId], references: [id], onDelete: SetNull)
+  note      String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([serviceId, date, staffMemberId])
+  @@index([serviceId, date])
+  @@index([staffMemberId])
+
+}
+
+model Booking {
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  serviceId      String
+  service        Service       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  customerId     String
+  customer       User          @relation("BookingCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  staffMemberId  String?
+  staffMember    Membership?   @relation("BookingStaffMember", fields: [staffMemberId], references: [id], onDelete: SetNull)
+  status         BookingStatus @default(PENDING)
+  startAt        DateTime
+  endAt          DateTime
+  priceCents     Int?
+  currency       String?       @default("TRY")
+  cancelledAt    DateTime?
+  cancelReason   String?
+  customerNote   String?
+  internalNote   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, startAt])
+  @@index([serviceId, startAt])
+  @@index([customerId, startAt])
+  @@index([staffMemberId, startAt])
+
+    @@unique([serviceId, staffMemberId, startAt], map: "uniq_service_staff_start")
+
+
+
+}
+
+model AuditLog {
+  id             String        @id @default(cuid())
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action         AuditAction
+  entity         String?
+  entityId       String?
+  ip             String?
+
+  userAgent      String?
+  meta           Json?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+
 }
