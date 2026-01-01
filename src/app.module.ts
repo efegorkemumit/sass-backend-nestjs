@@ -3,6 +3,9 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { envSchema } from './config/env.schema';
+import { PrismaService } from './prisma.service';
+import { UsersService } from './user.service';
+import { PostsService } from './post.service';
 
 @Module({
   imports: [ConfigModule.forRoot({
@@ -10,6 +13,6 @@ import { envSchema } from './config/env.schema';
     validate:(env)=>envSchema.parse(env)
   })],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, PrismaService, UsersService, PostsService],
 })
 export class AppModule {}
