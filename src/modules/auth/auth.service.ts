@@ -3,12 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma.service';
 import * as bcrypt from "bcrypt";
-import { LoginInput, RegisterInput } from './dto';
+import { LoginInput, RefreshInput, RegisterInput } from './dto';
 
    type TokenResponse= {
         accessToken: string;
         refreshToken: string;
         tokenType: "Bearer"
+    }
+
+    type RefreshPayload={
+        sub:string;
+        type?:"refresh" |"access";
     }
 
 @Injectable()
@@ -77,6 +82,38 @@ export class AuthService {
 
     }
 
+    private async verifyRefresh(token:string): Promise<RefreshPayload>{
+        const refresSecret = this.config.get<string>("JWT_REFRESH_SECRET")!;
+
+        try {
+            const payload = (await this.jwt.verifyAsync(token,{
+                secret:refresSecret
+            })) as RefreshPayload;
+
+            if(!payload.sub) throw new UnauthorizedException("Invalid refresh token");
+            if(payload.type && payload.type !== "refresh") throw new UnauthorizedException("Invalid refresh token");
+            return payload;
+            
+        } catch (error) {
+            throw new UnauthorizedException("Invalid refresh token");
+        }
+
+    }
+
+    private async findMatchingRefresh(
+        raw:string, 
+        rows:Array<{id:string; tokenHash:string}>,
+    ):Promise<{id:string } |null>{
+
+        for(const r of rows){
+            const ok = await bcrypt.compare(raw, r.tokenHash);
+            if(ok) return {id: r.id};
+        }
+
+        return null;
+
+    }
+
     async register(dto:RegisterInput):Promise<TokenResponse>{
 
         const email = dto.email.trim().toLowerCase();
@@ -140,6 +177,46 @@ export class AuthService {
 
 
         return this.issueToken(user.id)
+
+
+    }
+
+    async refresh(dto:RefreshInput): Promise<TokenResponse>{
+        const raw = dto.refreshToken.trim();
+        if(!raw) throw new UnauthorizedException("Missing refresh token.");
+
+        const payload = await this.verifyRefresh(raw)
+
+        const candidates = await this.prisma.refreshToken.findMany({
+            where:{
+                userId:payload.sub,
+                revokedAt:null,
+                expiresAt:{gt:new Date()}
+            },
+            select:{id:true, tokenHash:true},
+            orderBy:{createdAt:"desc"},
+            take:25
+        })
+
+        const matched = await this.findMatchingRefresh(raw, candidates)
+        if(!matched) throw new UnauthorizedException("Invalid refresh token.");
+
+        await this.prisma.refreshToken.update({
+            where: {id:matched.id},
+            data:{revokedAt:new Date()}
+        })
+
+       await this.prisma.auditLog.create({
+            data: {
+                action: "UPDATE",
+                userId: payload.sub,
+                entity: "RefreshToken",
+                entityId: matched.id,
+                meta: { rotate: true },
+            },
+        });
+
+        return this.issueToken(payload.sub);
 
 
     }
