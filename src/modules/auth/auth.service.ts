@@ -1,9 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma.service';
 import * as bcrypt from "bcrypt";
-import { RegisterInput } from './dto';
+import { LoginInput, RegisterInput } from './dto';
 
    type TokenResponse= {
         accessToken: string;
@@ -116,6 +116,30 @@ export class AuthService {
 
         return this.issueToken(user.id)
         
+
+
+    }
+
+    async login(dto:LoginInput):Promise<TokenResponse>{
+        const email = dto.email.trim().toLowerCase();
+
+        const user = await this.prisma.user.findUnique({
+            where:{email},
+            select:{id:true, passwordHash:true, status:true}
+        })
+
+        if(!user) throw new UnauthorizedException("Invalid credentials");
+        if(user.status !=="ACTIVE") throw new UnauthorizedException("user is disabled");
+
+        const ok = await bcrypt.compare(dto.password, user.passwordHash);
+        if(!ok) throw new UnauthorizedException("Invalid credentials");
+
+        await this.prisma.auditLog.create({
+            data:{action:"LOGIN", userId: user.id, entity:"User", entityId:user.id}
+        })
+
+
+        return this.issueToken(user.id)
 
 
     }
