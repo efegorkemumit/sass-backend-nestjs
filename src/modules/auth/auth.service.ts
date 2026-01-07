@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma.service';
 import * as bcrypt from "bcrypt";
-import { LoginInput, RefreshInput, RegisterInput } from './dto';
+import { LoginInput, LogoutInput, RefreshInput, RegisterInput } from './dto';
 
    type TokenResponse= {
         accessToken: string;
@@ -114,6 +114,14 @@ export class AuthService {
 
     }
 
+    private tryDecode(token:string):RefreshPayload | null {
+        try {
+            return this.jwt.decode(token) as any
+        } catch (error) {
+            return null
+        }
+    }
+
     async register(dto:RegisterInput):Promise<TokenResponse>{
 
         const email = dto.email.trim().toLowerCase();
@@ -218,6 +226,52 @@ export class AuthService {
 
         return this.issueToken(payload.sub);
 
+
+    }
+
+    async logout(dto:LogoutInput): Promise<{ok:true}>{
+        const raw = dto.refreshToken.trim();
+        if(!raw) return {ok:true}
+
+        const decoded = this.tryDecode(raw)
+        if(!decoded?.sub) return {ok:true}
+        if(decoded.type && decoded.type !=="refresh") return {ok:true};
+
+        const candidates = await this.prisma.refreshToken.findMany({
+            where:{
+                userId:decoded.sub,
+                revokedAt: null,
+                expiresAt : {gt:new Date()}
+            },
+            select:{id:true, tokenHash:true},
+            orderBy: {createdAt:"desc"},
+            take:200
+        });
+
+        const matchedIds:string[] = [];
+        for(const r of candidates){
+            const ok = await bcrypt.compare(raw, r.tokenHash)
+            if(ok) matchedIds.push(r.id)
+        }
+        
+        if(matchedIds.length === 0) return {ok:true};
+
+        await this.prisma.refreshToken.updateMany({
+            where:{id:{in:matchedIds}},
+            data: {revokedAt: new Date()}
+        });
+
+        await this.prisma.auditLog.create({
+            data:{
+                action:"LOGOUT",
+                userId:decoded.sub,
+                entity:"RefreshToken",
+                entityId:matchedIds[0],
+                meta:{scope:"current_session", revokedCount: matchedIds.length}
+            }
+        })
+
+        return {ok:true};
 
     }
     

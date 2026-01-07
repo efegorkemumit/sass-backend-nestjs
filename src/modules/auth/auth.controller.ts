@@ -1,8 +1,8 @@
 import { Body, Controller, Post, UsePipes } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ZodValidationPipe } from 'src/common/pipes/zod-validation.pipe';
-import type {  LoginInput, RefreshInput, RegisterInput } from './dto';
-import {  LoginSchema, RefreshSchema, RegisterSchema } from './dto';
+import type {  LoginInput, LogoutInput, RefreshInput, RegisterInput } from './dto';
+import {  LoginSchema, LogoutSchema, RefreshSchema, RegisterSchema } from './dto';
 
 @Controller('auth')
 export class AuthController {
@@ -24,6 +24,12 @@ export class AuthController {
     @UsePipes(new ZodValidationPipe(RefreshSchema))
     refresh(@Body() dto: RefreshInput){
         return this.auth.refresh(dto);
+    }
+
+    @Post("logout")
+    @UsePipes(new ZodValidationPipe(LogoutSchema))
+    logout(@Body() dto: LogoutInput){
+        return this.auth.logout(dto);
     }
 
 }
