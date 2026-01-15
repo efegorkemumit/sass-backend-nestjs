@@ -1,12 +1,28 @@
-import { Body, Controller, Post, UsePipes } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, UsePipes } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ZodValidationPipe } from 'src/common/pipes/zod-validation.pipe';
 import type {  LoginInput, LogoutInput, RefreshInput, RegisterInput } from './dto';
 import {  LoginSchema, LogoutSchema, RefreshSchema, RegisterSchema } from './dto';
+import { Public } from './decorators/public.decorator';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CurrentUser } from './decorators/current-user.decorator';
+import type {  JwtUser } from './decorators/current-user.decorator';
 
 @Controller('auth')
 export class AuthController {
     constructor(private readonly auth : AuthService){}
+
+    @Public()
+    @Get("public-ping")
+    publicPing(){
+        return {ok:true} 
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @Get("me")
+    me(@CurrentUser() user: JwtUser){
+        return {user};
+    }
 
     @Post("register")
     @UsePipes(new ZodValidationPipe(RegisterSchema))
