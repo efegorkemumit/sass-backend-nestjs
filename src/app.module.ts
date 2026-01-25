@@ -12,6 +12,9 @@ import { AvailabilityModule } from './modules/availability/availability.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { HealthModule } from './modules/health/health.module';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from './modules/auth/guards/roles.guard';
 
 @Module({
   imports: [ConfigModule.forRoot({
@@ -19,6 +22,10 @@ import { HealthModule } from './modules/health/health.module';
     validate:(env)=>envSchema.parse(env)
   }), AuthModule, OrganizationsModule, MembershipsModule, ServicesModule, AvailabilityModule, BookingsModule, AuditModule, HealthModule],
   controllers: [AppController],
-  providers: [AppService, PrismaService],
+  providers: [AppService, PrismaService,
+    {provide: APP_GUARD, useClass: JwtAuthGuard},
+    {provide: APP_GUARD, useClass: RolesGuard}
+
+  ],
 })
 export class AppModule {}

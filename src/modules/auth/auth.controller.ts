@@ -24,18 +24,21 @@ export class AuthController {
         return {user};
     }
 
+    @Public()
     @Post("register")
     @UsePipes(new ZodValidationPipe(RegisterSchema))
     register(@Body() dto: RegisterInput){
         return this.auth.register(dto);
     }
 
+    @Public()
     @Post("login")
     @UsePipes(new ZodValidationPipe(LoginSchema))
     login(@Body() dto: LoginInput){
         return this.auth.login(dto);
     }
 
+    @Public()
     @Post("refresh")
     @UsePipes(new ZodValidationPipe(RefreshSchema))
     refresh(@Body() dto: RefreshInput){
