@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
 import { CreateOrganizationInput } from './dto';
 import { AuditAction, MembershipRole } from 'generated/prisma/enums';
@@ -39,6 +39,14 @@ export class OrganizationsService {
             i++
             if(i>50) throw new BadRequestException("Could not generate unique slug.");
         }
+    }
+
+    private async requireMembership(userId:string, organizationId:string){
+        const m = await this.prisma.membership.findUnique({
+            where:{userId_organizationId:{userId, organizationId}},
+            select:{id:true, role:true}
+        })
+
     }
 
     async create(userId:string, dto:CreateOrganizationInput){
@@ -98,6 +106,61 @@ export class OrganizationsService {
 
         return created;
 
+    }
+
+    async listMine(userId:string, query?:{isActive?:boolean}){
+        const rows = await this.prisma.organization.findMany({
+            where:{
+                ...(query?.isActive !==undefined ? {isActive: query.isActive}: {}),
+                members:{some:{userId}},
+            },
+            orderBy:{createdAt:"desc"},
+            select:{
+                id:true,
+                name:true,
+                slug:true,
+                timezone:true,
+                isActive:true,
+                createdAt:true,
+                updatedAt:true,
+                members:{
+                    where:{userId},
+                    select:{role:true},
+                    take:1
+                }
+            }
+        })
+
+        return rows.map((o)=>({
+            id:o.id,
+            name:o.name,
+            slug:o.slug,
+            timezone:o.timezone,
+            isActive:o.isActive,
+            cretedAt:o.createdAt,
+            updatedAt:o.updatedAt,
+            myRole:o.members?.[0]?.role ?? null,
+        }))
+    }
+
+    async getOne(userId :string, organizationId:string){
+        await this.requireMembership(userId, organizationId)
+
+        const org = await this.prisma.organization.findUnique({
+            where:{id:organizationId},
+            select:{
+                    id: true,
+                    name: true,
+                    slug: true,
+                    timezone: true,
+                    isActive: true,
+                    createdAt: true,
+                    updatedAt: true,
+            }
+        });
+
+        if(!org) throw new NotFoundException("Organization not found.");
+        return org
     }
 
 

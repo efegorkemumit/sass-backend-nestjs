@@ -7,4 +7,12 @@ export const CreateOrganizationSchema= z.object({
 
 })
 
+export const ListOrganizationsQuerySchema = z.object({
+    isActive: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "true")),
+})
+
 export type CreateOrganizationInput = z.infer<typeof CreateOrganizationSchema>;
+export type ListOrganizationsQuery = z.infer<typeof ListOrganizationsQuerySchema>;
