@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Param, Post, Query, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UnauthorizedException } from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
 import { CurrentUser, JwtUser } from '../auth/decorators/current-user.decorator';
 import { ZodValidationPipe } from 'src/common/pipes/zod-validation.pipe';
-import {  CreateOrganizationSchema, ListOrganizationsQuerySchema } from './dto';
-import type { CreateOrganizationInput, ListOrganizationsQuery } from './dto';
+import {  CreateOrganizationSchema, ListOrganizationsQuerySchema, UpdateOrganizationSchema } from './dto';
+import type { CreateOrganizationInput, ListOrganizationsQuery, UpdateOrganizationInput } from './dto';
 
 @Controller('organizations')
 export class OrganizationsController {
@@ -39,6 +39,36 @@ export class OrganizationsController {
     getOne(@CurrentUser() user:JwtUser | null, @Param("id") organizationId:string){
         const userId = this.requireUserId(user);
         return this.organizations.getOne(userId, organizationId)
+    }
+
+
+    @Patch(":id")
+    update(
+        @CurrentUser() user:JwtUser | null,
+        @Param("id")  organizationId: string,
+        @Body(new ZodValidationPipe(UpdateOrganizationSchema))
+        dto:UpdateOrganizationInput
+    ){
+        if(!user) throw new UnauthorizedException("Unauthorized");
+        return this.organizations.update(user.userId, organizationId, dto)
+    }
+
+    @Patch(":id/archive")
+    archive(   
+        @CurrentUser() user:JwtUser | null,
+        @Param("id")  organizationId: string,
+    ){
+      const userId = this.requireUserId(user);
+      return this.organizations.archive(userId, organizationId)
+    }
+
+    @Patch(":id/unarchive")
+    unarchive(   
+        @CurrentUser() user:JwtUser | null,
+        @Param("id")  organizationId: string,
+    ){
+      const userId = this.requireUserId(user);
+      return this.organizations.unarchive(userId, organizationId)
     }
 
 }

@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
-import { CreateOrganizationInput } from './dto';
+import { CreateOrganizationInput, UpdateOrganizationInput } from './dto';
 import { AuditAction, MembershipRole } from 'generated/prisma/enums';
 
 @Injectable()
@@ -47,8 +47,35 @@ export class OrganizationsService {
             select:{id:true, role:true}
         })
 
+        if(!m)  throw new ForbiddenException("Not a member of this organization.");
+        return m;
+
     }
 
+    private async requireOrganization(organizationId:string){
+        const org = await this.prisma.organization.findUnique({
+            where:{id:organizationId},
+            select:{id:true}
+        })
+
+        if(!org) throw new NotFoundException("Organization not found.");
+        return org
+    }
+
+    private async requireOrgRole(
+        userId:string,
+        organizationId:string,
+        allowed:MembershipRole[]
+    ){
+        const m = await this.requireMembership(userId, organizationId);
+        if(!allowed.includes(m.role)){
+            throw new ForbiddenException("Insufficient role for this action.");
+
+        }
+        return m;
+    }
+
+    /*POST */
     async create(userId:string, dto:CreateOrganizationInput){
         const name = dto.name.trim();
         if (!name) throw new BadRequestException("Organization name is required.");
@@ -108,6 +135,7 @@ export class OrganizationsService {
 
     }
 
+    /*GET */
     async listMine(userId:string, query?:{isActive?:boolean}){
         const rows = await this.prisma.organization.findMany({
             where:{
@@ -143,6 +171,7 @@ export class OrganizationsService {
         }))
     }
 
+    /*GET */
     async getOne(userId :string, organizationId:string){
         await this.requireMembership(userId, organizationId)
 
@@ -163,6 +192,154 @@ export class OrganizationsService {
         return org
     }
 
+    /*PATCH */
+
+    async update(
+        userId:string,
+        organizationId:string,
+        dto:UpdateOrganizationInput
+    ){
+
+        await this.requireOrganization(organizationId);
+
+        await this.requireOrgRole(userId, organizationId,[
+            MembershipRole.OWNER,
+            MembershipRole.ADMIN
+        ])
+
+        const data: any = {}
+
+        if(dto.name !==undefined){
+            const n = dto.name.trim();
+            if(!n) throw new BadRequestException("Organization name cannot be empty.");
+            data.name = n
+        } 
+        
+        if (dto.slug !== undefined) {
+            const s = this.toSlug(dto.slug.trim());
+            if (!s) throw new BadRequestException("Invalid slug.");
+            data.slug = await this.ensureSlugUnique(s);
+        }
+
+        if (dto.timezone !== undefined) {
+            const tz = dto.timezone.trim();
+            if (!tz) throw new BadRequestException("Timezone cannot be empty.");
+            data.timezone = tz;
+        }
+
+        if (dto.isActive !== undefined) {
+            data.isActive = dto.isActive;
+        }
+
+        if(Object.keys(data).length ===0){
+             throw new BadRequestException("Nothing to update.");
+        }
+
+        const updated = await this.prisma.organization.update({
+            where:{id:organizationId},
+            data,
+            select:{
+                id: true,
+                name: true,
+                slug: true,
+                timezone: true,
+                isActive: true,
+                updatedAt: true,
+            }
+        })
+
+        await this.prisma.auditLog.create({
+            data:{
+                action:AuditAction.UPDATE,
+                userId,
+                organizationId,
+                entity:"Organization",
+                entityId:organizationId,
+                meta:{fields :Object.keys(data)}
+            }
+        })
+
+        return updated;
+
+    }
+
+
+    /*PATCH */
+
+    async archive(userId:string, organizationId:string){
+
+        await this.requireOrganization(organizationId);
+
+        await this.requireOrgRole(userId, organizationId, [MembershipRole.OWNER]);
+
+        const updated = await this.prisma.organization.update({
+            where:{id:organizationId},
+            data : {isActive :false},
+            select:{
+                id: true,
+                name: true,
+                slug: true,
+                timezone: true,
+                isActive: true,
+                updatedAt: true,
+            }
+        })
+
+        await this.prisma.auditLog.create({
+            data:{
+                action:AuditAction.UPDATE,
+                userId,
+                organizationId,
+                entity:"Organization",
+                entityId:organizationId,
+                meta:{archived : true}
+            }
+        })
+
+         return updated;
+    }
+
+
+        /*PATCH */
+
+    async unarchive(userId:string, organizationId:string){
+
+        await this.requireOrganization(organizationId);
+
+        await this.requireOrgRole(userId, organizationId, [MembershipRole.OWNER]);
+
+        const updated = await this.prisma.organization.update({
+            where:{id:organizationId},
+            data : {isActive :true},
+            select:{
+                id: true,
+                name: true,
+                slug: true,
+                timezone: true,
+                isActive: true,
+                updatedAt: true,
+            }
+        })
+
+        await this.prisma.auditLog.create({
+            data:{
+                action:AuditAction.UPDATE,
+                userId,
+                organizationId,
+                entity:"Organization",
+                entityId:organizationId,
+                meta:{unarchived : true}
+            }
+        })
+
+        return updated;
+
+
+    }
+
+
+
+     
 
 
 
