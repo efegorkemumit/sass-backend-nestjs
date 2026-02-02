@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from 'src/prisma.service';
 import { CreateOrganizationInput, UpdateOrganizationInput } from './dto';
 import { AuditAction, MembershipRole } from 'generated/prisma/enums';
+import { requireMembership, requireOrgRole } from 'src/common/authz/org-authz';
 
 @Injectable()
 export class OrganizationsService {
@@ -41,16 +42,7 @@ export class OrganizationsService {
         }
     }
 
-    private async requireMembership(userId:string, organizationId:string){
-        const m = await this.prisma.membership.findUnique({
-            where:{userId_organizationId:{userId, organizationId}},
-            select:{id:true, role:true}
-        })
 
-        if(!m)  throw new ForbiddenException("Not a member of this organization.");
-        return m;
-
-    }
 
     private async requireOrganization(organizationId:string){
         const org = await this.prisma.organization.findUnique({
@@ -62,18 +54,7 @@ export class OrganizationsService {
         return org
     }
 
-    private async requireOrgRole(
-        userId:string,
-        organizationId:string,
-        allowed:MembershipRole[]
-    ){
-        const m = await this.requireMembership(userId, organizationId);
-        if(!allowed.includes(m.role)){
-            throw new ForbiddenException("Insufficient role for this action.");
 
-        }
-        return m;
-    }
 
     /*POST */
     async create(userId:string, dto:CreateOrganizationInput){
@@ -173,7 +154,7 @@ export class OrganizationsService {
 
     /*GET */
     async getOne(userId :string, organizationId:string){
-        await this.requireMembership(userId, organizationId)
+        await requireMembership(userId, organizationId)
 
         const org = await this.prisma.organization.findUnique({
             where:{id:organizationId},
@@ -202,7 +183,7 @@ export class OrganizationsService {
 
         await this.requireOrganization(organizationId);
 
-        await this.requireOrgRole(userId, organizationId,[
+        await requireOrgRole(userId, organizationId,[
             MembershipRole.OWNER,
             MembershipRole.ADMIN
         ])
@@ -270,7 +251,7 @@ export class OrganizationsService {
 
         await this.requireOrganization(organizationId);
 
-        await this.requireOrgRole(userId, organizationId, [MembershipRole.OWNER]);
+        await requireOrgRole(userId, organizationId, [MembershipRole.OWNER]);
 
         const updated = await this.prisma.organization.update({
             where:{id:organizationId},
@@ -306,7 +287,7 @@ export class OrganizationsService {
 
         await this.requireOrganization(organizationId);
 
-        await this.requireOrgRole(userId, organizationId, [MembershipRole.OWNER]);
+        await requireOrgRole(userId, organizationId, [MembershipRole.OWNER]);
 
         const updated = await this.prisma.organization.update({
             where:{id:organizationId},
