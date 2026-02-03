@@ -19,7 +19,7 @@ export async function requireOrgRole(
             organizationId:string,
             allowed:MembershipRole[]
 ){
-            const m = await this.requireMembership(prisma, userId, organizationId);
+            const m = await requireMembership(prisma, userId, organizationId);
             if(!allowed.includes(m.role)){
                 throw new ForbiddenException("Insufficient role for this action.");
     
