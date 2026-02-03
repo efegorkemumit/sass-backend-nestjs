@@ -1,10 +1,10 @@
-import { Body, Controller, Headers, Param, Patch, Post, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UnauthorizedException } from '@nestjs/common';
 import { ServicesService } from './services.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser, JwtUser } from '../auth/decorators/current-user.decorator';
 import { ZodValidationPipe } from 'src/common/pipes/zod-validation.pipe';
-import { CreateServiceSchema, UpdateServiceSchema } from './dto';
-import type{ CreateServiceInput, UpdateServiceInput } from './dto';
+import { CreateServiceSchema, ListServicesQuerySchema, UpdateServiceSchema } from './dto';
+import type{ CreateServiceInput, ListServicesQuery, UpdateServiceInput } from './dto';
 
 @Controller('services')
 export class ServicesController {
@@ -21,6 +21,35 @@ export class ServicesController {
         const orgId= (xOrgId ?? "").toString().trim()
         if(!orgId) throw new UnauthorizedException("Missing OrgId");
         return orgId;
+    }
+
+
+    // GET
+
+    @Get()
+    @Roles("OWNER", "ADMIN", "STAFF")
+    list(
+        @CurrentUser() user:JwtUser | null,
+        @Headers("x-org-id") xOrgId:string | undefined,
+        @Query(new ZodValidationPipe(ListServicesQuerySchema)) query:ListServicesQuery
+    ){
+
+        const userId = this.requireUserId(user);
+        const orgId = this.requireOrgId(xOrgId);
+        return this.services.list(userId, orgId, query)
+    }
+
+    @Get(":id")
+    @Roles("OWNER", "ADMIN", "STAFF")
+    getOne(
+        @CurrentUser() user:JwtUser | null,
+        @Headers("x-org-id") xOrgId:string | undefined,
+        @Param("id") serviceId:string,
+    ){
+
+        const userId = this.requireUserId(user);
+        const orgId = this.requireOrgId(xOrgId);
+        return this.services.getOne(userId, orgId, serviceId)
     }
 
 

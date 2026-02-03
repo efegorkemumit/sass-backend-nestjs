@@ -1,8 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
-import { CreateServiceInput, UpdateServiceInput } from './dto';
+import { CreateServiceInput, ListServicesQuery, UpdateServiceInput } from './dto';
 import { requireOrgRole } from 'src/common/authz/org-authz';
 import { AuditAction, MembershipRole, ServiceStatus } from 'generated/prisma/enums';
+import { skip } from 'node:test';
 
 @Injectable()
 export class ServicesService {
@@ -164,5 +165,63 @@ export class ServicesService {
 
 
     }
+
+    async list(userId:string, organizationId:string, query:ListServicesQuery){
+        await requireOrgRole(this.prisma, userId, organizationId,[
+            MembershipRole.OWNER,
+            MembershipRole.ADMIN,
+            MembershipRole.STAFF
+        ]);
+
+        const q = query.q?.trim();
+        const where: any ={
+            organizationId,
+            ...(query.status ? {status:query.status}: {}),
+            ...(q
+                ?
+                {
+                    OR:[
+                        {name:{contains :q, mode:"insensitive"}},
+                        {description: {contains :q, mode:"insensitive"}}
+                    ]
+                }
+                :
+                {}
+            ),
+        };
+
+        const [items, total] = await this.prisma.$transaction([
+            this.prisma.service.findMany({
+                where,
+                orderBy:{createdAt:"desc"},
+                skip:query.skip ?? 0,
+                take: query.take ?? 50,
+                select:this.serviceSelect
+            }),
+            this.prisma.service.count({where})
+        ])
+
+        return{
+            items,
+            page:{
+                total,
+                take:query.take ?? 50,
+                skip: query.skip ?? 0
+            }
+        }
+
+    }
+
+    async getOne(userId:string, organizationId:string, serviceId:string){
+        await requireOrgRole(this.prisma, userId, organizationId,[
+            MembershipRole.OWNER,
+            MembershipRole.ADMIN,
+            MembershipRole.STAFF
+        ]);
+
+        return this.requireServiceInOrg(organizationId, serviceId);
+    }
+
+
 
 }
