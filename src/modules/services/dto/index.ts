@@ -31,6 +31,13 @@ export const ListServicesQuerySchema = z
   })
   .strict();
 
+export const AddServiceStaffSchema = z
+  .object({
+    memberId:z.string().min(1)
+  })
+    .strict();
+
 export type ListServicesQuery = z.infer<typeof ListServicesQuerySchema>;
 export type CreateServiceInput = z.infer<typeof CreateServiceSchema>;
 export type UpdateServiceInput = z.infer<typeof UpdateServiceSchema>;
+export type AddServiceStaffInput = z.infer<typeof AddServiceStaffSchema>;

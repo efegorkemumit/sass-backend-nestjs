@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, UnauthorizedException } from '@nestjs/common';
 import { ServicesService } from './services.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser, JwtUser } from '../auth/decorators/current-user.decorator';
 import { ZodValidationPipe } from 'src/common/pipes/zod-validation.pipe';
-import { CreateServiceSchema, ListServicesQuerySchema, UpdateServiceSchema } from './dto';
-import type{ CreateServiceInput, ListServicesQuery, UpdateServiceInput } from './dto';
+import { AddServiceStaffSchema, CreateServiceSchema, ListServicesQuerySchema, UpdateServiceSchema } from './dto';
+import type{ AddServiceStaffInput, CreateServiceInput, ListServicesQuery, UpdateServiceInput } from './dto';
 
 @Controller('services')
 export class ServicesController {
@@ -115,6 +115,50 @@ export class ServicesController {
     }
 
 
+    /////// Service Staff
+
+
+    @Get(":id/staff")
+    @Roles("OWNER", "ADMIN", "STAFF")
+    listStaff(
+        @CurrentUser() user:JwtUser | null,
+        @Headers("x-org-id") xOrgId:string | undefined,
+        @Param("id") serviceId:string,
+    ){
+
+        const userId = this.requireUserId(user);
+        const orgId = this.requireOrgId(xOrgId);
+        return this.services.listStaff(userId, orgId, serviceId)
+    }
+
+    @Post(":id/staff")
+    @Roles("OWNER", "ADMIN")
+    addStaff(
+        @CurrentUser() user:JwtUser | null,
+        @Headers("x-org-id") xOrgId:string | undefined,
+        @Param("id") serviceId:string,
+        @Body(new ZodValidationPipe(AddServiceStaffSchema)) dto:AddServiceStaffInput
+    ){
+
+        const userId = this.requireUserId(user);
+        const orgId = this.requireOrgId(xOrgId);
+        return this.services.addStaff(userId, orgId, serviceId, dto)
+    }
+
+    @Delete(":id/staff/:memberId")
+    @Roles("OWNER", "ADMIN")
+    removeStaff(
+        @CurrentUser() user:JwtUser | null,
+        @Headers("x-org-id") xOrgId:string | undefined,
+        @Param("id") serviceId:string,
+        @Param("memberId") memberId:string,
+
+    ){
+
+        const userId = this.requireUserId(user);
+        const orgId = this.requireOrgId(xOrgId);
+        return this.services.removeStaff(userId, orgId, serviceId, memberId)
+    }
 
 
 

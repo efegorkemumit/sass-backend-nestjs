@@ -1,9 +1,10 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma.service';
-import { CreateServiceInput, ListServicesQuery, UpdateServiceInput } from './dto';
+import { AddServiceStaffInput, CreateServiceInput, ListServicesQuery, UpdateServiceInput } from './dto';
 import { requireOrgRole } from 'src/common/authz/org-authz';
 import { AuditAction, MembershipRole, ServiceStatus } from 'generated/prisma/enums';
 import { skip } from 'node:test';
+import { email } from 'zod';
 
 @Injectable()
 export class ServicesService {
@@ -23,6 +24,26 @@ export class ServicesService {
             updatedAt: true,
     }
 
+    private staffLinkSelect = {
+        id: true,
+        serviceId: true,
+        memberId: true,
+        createdAt: true,
+        member:{
+            select:{
+                id:true,
+                role:true,
+                user:{
+                    select:{
+                        id:true,
+                        email:true,
+                        fullName:true
+                    }
+                }
+            }
+        }
+
+    }
     private async requireServiceInOrg(organizationId:string, serviceId:string){
         const s = await this.prisma.service.findFirst({
             where:{id:serviceId, organizationId},
@@ -32,6 +53,22 @@ export class ServicesService {
         if(!s) throw new NotFoundException("Service not found.");
         return s;
     }
+
+    private async requireStaffMembership(organizationId:string, memberId:string){
+        const m=  await this.prisma.membership.findFirst({
+            where:{id:memberId, organizationId},
+            select:{id:true, role:true}
+        })
+
+        if(!m)  throw new NotFoundException("Membership not found.");
+        if(m.role === MembershipRole.CUSTOMER){
+             throw new BadRequestException("Only staff members can be assigned.");
+        }
+
+         return m;
+    }
+
+
 
     async create(userId:string, organizationId:string, dto:CreateServiceInput){
         const name = dto.name.trim();
@@ -221,6 +258,100 @@ export class ServicesService {
 
         return this.requireServiceInOrg(organizationId, serviceId);
     }
+
+    /// STAFF
+
+    async listStaff(userId:string, organizationId:string, serviceId:string){
+        await requireOrgRole(this.prisma, userId, organizationId,[
+            MembershipRole.OWNER,
+            MembershipRole.ADMIN,
+            MembershipRole.STAFF
+        ]);
+
+        await this.requireServiceInOrg(organizationId, serviceId);
+
+        return this.prisma.serviceStaff.findMany({
+            where:{serviceId},
+            orderBy:{createdAt:"desc"},
+            select:this.staffLinkSelect
+        })
+    }
+
+    async addStaff(userId:string, organizationId:string, serviceId:string, dto:AddServiceStaffInput){
+        await requireOrgRole(this.prisma, userId, organizationId,[
+            MembershipRole.OWNER,
+            MembershipRole.ADMIN,
+        ]);
+
+        await this.requireServiceInOrg(organizationId, serviceId);
+        await this.requireStaffMembership(organizationId, dto.memberId);
+
+        const existing = await this.prisma.serviceStaff.findUnique({
+            where:{serviceId_memberId: {serviceId, memberId:dto.memberId}},
+            select:this.staffLinkSelect
+        });
+
+        if(existing) return existing;
+
+        const created = await this.prisma.serviceStaff.create({
+            data:{
+                serviceId,
+                memberId:dto.memberId
+            },
+            select:this.staffLinkSelect
+        })
+
+        await this.prisma.auditLog.create({
+             data: {
+                action: AuditAction.CREATE,
+                userId,
+                organizationId,
+                entity: "ServiceStaff",
+                entityId: created.id,
+                meta: { serviceId, memberId: dto.memberId },
+            },
+
+        })
+
+        return created
+
+
+    }
+
+    async removeStaff(userId:string, organizationId:string, serviceId:string, memberId:string){
+        await requireOrgRole(this.prisma, userId, organizationId,[
+            MembershipRole.OWNER,
+            MembershipRole.ADMIN,
+        ]);
+
+        await this.requireServiceInOrg(organizationId, serviceId);
+
+        const existing = await this.prisma.serviceStaff.findUnique({
+            where:{serviceId_memberId: {serviceId, memberId}},
+            select:this.staffLinkSelect
+        });
+
+        if(!existing) throw new NotFoundException("Service staff link not found.");
+
+        await this.prisma.serviceStaff.delete({
+            where:{serviceId_memberId : {serviceId, memberId}}
+        })
+
+        await this.prisma.auditLog.create({
+            data: {
+                action: AuditAction.DELETE,
+                userId,
+                organizationId,
+                entity: "ServiceStaff",
+                entityId: existing.id,
+                meta: { serviceId, memberId },
+            },
+        });
+
+        return {removed : true};
+
+    }
+
 
 
 
